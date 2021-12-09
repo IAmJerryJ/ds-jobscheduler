@@ -1,0 +1,63 @@
+#!/bin/bash
+# make sure you have your client and ds-sim (ds-server and ds-client) all in the same directory and test configuration files in configs directory 
+# to kill multiple runaway processes, use 'pkill runaway_process_name'
+# For the Java implementation, use the following format: ./tests1.sh your_client.class [user-specified argument...]
+configDir="./S1DemoConfigs"
+diffLog="stage1.diff"
+
+if [ ! -d $configDir ]; then
+	echo "No $configDir found!"
+	exit
+fi
+
+if [ -f $configDir/$diffLog ]; then
+	rm $configDir/*.log
+	rm $configDir/$diffLog
+fi
+
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 your_client [user-specified argument...]"
+	exit
+fi
+
+if [ ! -f $1 ]; then
+	echo "No $1 found!"
+	echo "Usage: $0 your_client [user-specified argument...]"
+	exit
+fi
+
+trap "kill 0" EXIT
+
+yourClient=$1
+shift 1
+
+for conf in $configDir/*.xml; do
+	echo "$conf"
+	echo ----------------
+	echo "running the reference implementation (./ds-client)..."
+	sleep 1
+	./ds-server -c $conf -v brief -n > $conf.ref.log&
+	sleep 4
+	./ds-client -n
+	
+	echo "running your implementation ($yourClient $@)..."
+	sleep 2
+	./ds-server -c $conf -v brief -n > $conf.your.log&
+	sleep 4
+	java $@ $(sed 's/\.class//' <<< $yourClient)
+	sleep 1
+	diff $conf.ref.log $conf.your.log > $configDir/temp.log
+	if [ -s $configDir/temp.log ]; then
+		echo NOT PASSED!
+	elif [ `wc -c < $conf.ref.log` -eq 0 -a `wc -c < $conf.your.log` -eq 0 ]; then
+		echo "NOT PASSED (no log files)!"
+	else
+		echo PASSED!
+	fi
+	echo ============
+	sleep 1
+	cat $configDir/temp.log >> $configDir/$diffLog
+done
+
+echo "testing done! check $configDir/$diffLog"
+
